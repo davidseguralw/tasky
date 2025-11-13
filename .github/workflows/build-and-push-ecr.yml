@@ -48,3 +48,5 @@ jobs:
           docker run --rm --entrypoint /bin/sh \
             $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
             -c 'grep "David Segura" /app/wizexercise.txt'
+#will adding a comment do anything ? 
+#let's see 
