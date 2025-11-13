@@ -1,0 +1,5 @@
+project              = "ds5"
+aws_region           = "us-west-2"
+github_org           = "davidseguralw"
+github_repo          = "tasky"
+github_ref_condition = "refs/heads/main"
