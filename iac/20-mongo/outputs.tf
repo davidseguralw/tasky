@@ -6,5 +6,5 @@ output "backup_bucket_name" { value = aws_s3_bucket.backup.bucket }
 
 output "mongo_uri" {
   value     = "mongodb://${var.mongo_admin_user}:${var.mongo_admin_pass}@${aws_instance.mongodb.private_ip}:27017/${var.mongo_db_name}?authSource=admin"
-  sensitive = true
+  #sensitive = true
 }
