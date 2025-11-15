@@ -1,0 +1,54 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tasky-ingress
+  namespace: tasky
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /
+spec:
+  ingressClassName: alb   # <— this replaces kubernetes.io/ingress.class
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tasky-service
+                port:
+                  number: 80
+
+
+
+
+
+
+
+
+
+#old version, moved to above alternative to get the ALB cleaner
+
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: tasky-ingress
+#   namespace: tasky
+#   annotations:
+#     kubernetes.io/ingress.class: alb
+#     alb.ingress.kubernetes.io/scheme: internet-facing
+#     alb.ingress.kubernetes.io/target-type: ip
+#     # Optional: health check
+#     alb.ingress.kubernetes.io/healthcheck-path: /
+# spec:
+#   rules:
+#     - http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: tasky-service
+#                 port:
+#                   number: 80
