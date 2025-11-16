@@ -16,7 +16,8 @@ on:
           - 20-mongo
           - 30-eks
           - 40-app
-        default: 10-network
+          - 50-app-k8s
+        default: 50-app-k8s
       tfvars_file:
         description: "Base tfvars file in env/ (usually dev.tfvars)"
         required: true
