@@ -14,8 +14,6 @@ mongo_db_name    = "tasky"
 backup_bucket_name = ""       # leave blank to auto-name
 backup_cron        = "30 2 * * *"
 
-tf_state_bucket = "ds5-tfstate-us-west-2"
-tf_lock_table   = "ds5-tf-locks"
 
 vpc_id             = "vpc-0e9da4400944de043"
 public_subnet_ids = ["subnet-0d9eecdd372024151", "subnet-050923020c8a83645"]
