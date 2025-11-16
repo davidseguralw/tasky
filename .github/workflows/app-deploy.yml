@@ -1,0 +1,71 @@
+name: app-deploy
+
+on:
+  push:
+    paths:
+      - "app/**"
+      - "deploy/**"
+  workflow_dispatch: {}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ECR_REPO_URL: ${{ secrets.ECR_REPO_URL }}
+      EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+      EKS_CLUSTER_REGION: ${{ secrets.EKS_CLUSTER_REGION }}
+      APP_NAMESPACE: ${{ secrets.APP_NAMESPACE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.EXEC_ROLE_DEV_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "$ECR_REPO_URL"
+
+      - name: Build and push image
+        id: image
+        run: |
+          IMAGE_TAG=${GITHUB_SHA::7}
+          IMAGE="$ECR_REPO_URL:$IMAGE_TAG"
+
+          echo "Building $IMAGE"
+          docker build -t "$IMAGE" ./app
+          docker push "$IMAGE"
+
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --name "$EKS_CLUSTER_NAME" \
+            --region "$EKS_CLUSTER_REGION"
+
+      - name: Deploy to Kubernetes
+        run: |
+          IMAGE="${{ steps.image.outputs.image }}"
+
+          echo "Using image: $IMAGE"
+
+          # Apply Deployment with substituted image
+          export IMAGE
+          envsubst < deploy/k8s/deployment.yaml | kubectl apply -n "$APP_NAMESPACE" -f -
+
+          # Apply Service and Ingress as-is
+          kubectl apply -n "$APP_NAMESPACE" -f deploy/k8s/service.yaml
+          kubectl apply -n "$APP_NAMESPACE" -f deploy/k8s/ingress.yaml
+
+          kubectl -n "$APP_NAMESPACE" get pods,svc,ingress

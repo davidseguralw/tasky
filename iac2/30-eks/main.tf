@@ -131,7 +131,10 @@ resource "aws_eks_cluster" "this" {
     endpoint_public_access  = true
     endpoint_private_access = true
   }
-
+  access_config {
+  authentication_mode                         = "API_AND_CONFIG_MAP"
+  bootstrap_cluster_creator_admin_permissions = true
+  }
   enabled_cluster_log_types = [
     "api",
     "audit",
@@ -146,11 +149,9 @@ resource "aws_eks_cluster" "this" {
     aws_iam_role_policy_attachment.eks_cluster_policy,
     aws_iam_role_policy_attachment.eks_vpc_controller
   ]
+  
 }
-access_config {
-  authentication_mode                         = "API_AND_CONFIG_MAP"
-  bootstrap_cluster_creator_admin_permissions = true
-}
+
 
 # Cloud9 admin entry
 resource "aws_eks_access_entry" "cloud9_admin" {
