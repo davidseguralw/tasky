@@ -49,3 +49,11 @@ variable "environment_name" {
   type        = string
   description = "Environment identifier (dev, attack-1, etc.)"
 }
+
+variable "cloud9_role_arn" {
+  type = string
+}
+
+variable "github_oidc_role_arn" {
+  type = string
+}

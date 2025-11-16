@@ -147,6 +147,45 @@ resource "aws_eks_cluster" "this" {
     aws_iam_role_policy_attachment.eks_vpc_controller
   ]
 }
+access_config {
+  authentication_mode                         = "API_AND_CONFIG_MAP"
+  bootstrap_cluster_creator_admin_permissions = true
+}
+
+# Cloud9 admin entry
+resource "aws_eks_access_entry" "cloud9_admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = var.cloud9_role_arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "cloud9_admin_policy" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = aws_eks_access_entry.cloud9_admin.principal_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
+# GitHub OIDC admin entry
+resource "aws_eks_access_entry" "github_ci" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = var.github_oidc_role_arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "github_ci_policy" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = aws_eks_access_entry.github_ci.principal_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
 
 ########################################
 # NODE GROUP

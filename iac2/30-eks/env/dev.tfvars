@@ -23,3 +23,6 @@ tags = {
   Environment = "dev"
   Owner       = "ds5"
 }
+
+cloud9_role_arn      = "arn:aws:iam::724772065635:role/service-role/AWSCloud9SSMAccessRole"
+github_oidc_role_arn = "arn:aws:iam::724772065635:role/ds5-us-west-2-github-ci"
