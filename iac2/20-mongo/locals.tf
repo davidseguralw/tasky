@@ -1,4 +1,5 @@
 locals {
+  # Include env in names
   name_prefix = "${var.project}-${var.environment_name}-${var.aws_region}"
 
   tags = {
@@ -7,8 +8,6 @@ locals {
     Environment = var.environment_name
   }
 
-  # NOTE: now includes environment_name in default bucket name
-  bucket_name = var.backup_bucket_name != "" ?
-    var.backup_bucket_name :
-    "${var.project}-${var.environment_name}-mongo-backups-${var.aws_region}"
+  # Use explicit backup bucket if set, otherwise default convention
+  bucket_name = var.backup_bucket_name != "" ? var.backup_bucket_name : "${var.project}-${var.environment_name}-mongo-backups-${var.aws_region}"
 }
