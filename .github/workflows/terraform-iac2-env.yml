@@ -1,0 +1,90 @@
+name: Terraform iac2 Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      env_name:
+        description: "Logical environment name (dev, attack-1, blue-team, etc.)"
+        required: true
+        type: string
+      stack:
+        description: "Which iac2 stack to run"
+        required: true
+        type: choice
+        options:
+          - 10-network
+          - 20-mongo
+          - 30-eks
+          - 40-app
+        default: 10-network
+      tfvars_file:
+        description: "Base tfvars file in env/ (usually dev.tfvars)"
+        required: true
+        type: string
+        default: dev.tfvars
+      action:
+        description: "Terraform action to perform"
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+        default: apply
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      AWS_REGION: us-west-2
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.EXEC_ROLE_DEV_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Terraform Init
+        working-directory: iac2/${{ github.event.inputs.stack }}
+        run: terraform init -lock-timeout=5m
+
+      - name: Select or create workspace
+        working-directory: iac2/${{ github.event.inputs.stack }}
+        run: |
+          terraform workspace list || true
+          terraform workspace select "${{ github.event.inputs.env_name }}" || terraform workspace new "${{ github.event.inputs.env_name }}"
+
+      - name: Terraform plan/apply/destroy
+        working-directory: iac2/${{ github.event.inputs.stack }}
+        run: |
+          case "${{ github.event.inputs.action }}" in
+            plan)
+              terraform plan \
+                -var-file="env/${{ github.event.inputs.tfvars_file }}" \
+                -var="environment_name=${{ github.event.inputs.env_name }}"
+              ;;
+            apply)
+              terraform apply -auto-approve \
+                -var-file="env/${{ github.event.inputs.tfvars_file }}" \
+                -var="environment_name=${{ github.event.inputs.env_name }}"
+              ;;
+            destroy)
+              terraform destroy -auto-approve \
+                -var-file="env/${{ github.event.inputs.tfvars_file }}" \
+                -var="environment_name=${{ github.event.inputs.env_name }}"
+              ;;
+          esac
