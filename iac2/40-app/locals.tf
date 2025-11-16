@@ -1,5 +1,5 @@
 locals {
-  ecr_repo_name = "${var.project}-${var.environment_name}-tasky2"
+  ecr_repo_name = "${var.project}-${var.environment_name}-tasky"
 
   common_tags = merge(
     {
