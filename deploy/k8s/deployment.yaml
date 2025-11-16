@@ -25,6 +25,11 @@ spec:
                 secretKeyRef:
                   name: tasky-secret
                   key: MONGO_URI
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: tasky-secret
+                  key: MONGO_URI
             - name: SECRET_KEY
               valueFrom:
                 secretKeyRef:
