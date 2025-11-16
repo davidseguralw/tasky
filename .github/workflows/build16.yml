@@ -1,4 +1,4 @@
-name: Build and Push Tasky to ECR
+name: v16 Build and Push Tasky to ECR v16
 
 on:
   push:
