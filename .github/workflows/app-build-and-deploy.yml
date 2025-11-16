@@ -1,4 +1,4 @@
-name: Build and Deploy Tasky App on iac2
+name: Build and Deploy Tasky App on IaC v16
 
 on:
   push:
@@ -6,7 +6,8 @@ on:
     paths:
       - "app/**"
       - ".github/workflows/app-build-and-deploy.yml"
-  workflow_dispatch:
+      
+    workflow_dispatch:
     inputs:
       env_name:
         description: "Environment name (dev, attack-1, etc.)"
@@ -18,19 +19,74 @@ on:
         required: true
         type: string
         default: ds5
-      tfvars_file:
-        description: "tfvars file for iac2/40-app (usually dev.tfvars)"
+      app_tfvars_file:
+        description: "tfvars for iac2/40-app (ECR); usually dev.tfvars"
         required: true
         type: string
         default: dev.tfvars
-      run_terraform:
-        description: "Run Terraform for iac2/40-app after pushing image?"
+      k8s_tfvars_file:
+        description: "tfvars for iac2/50-app-k8s; usually dev.tfvars"
+        required: true
+        type: string
+        default: dev.tfvars
+      run_terraform_ecr:
+        description: "Run Terraform for iac2/40-app (ECR)?"
         required: true
         type: choice
-        options:
-          - "true"
-          - "false"
+        options: [ "true", "false" ]
         default: "true"
+      run_terraform_k8s:
+        description: "Run Terraform for iac2/50-app-k8s (K8s deploy)?"
+        required: true
+        type: choice
+        options: [ "true", "false" ]
+        default: "true"
+      cluster_name:
+        description: "Target EKS cluster for kubectl (old or new)"
+        required: false
+        type: string
+        default: ""      # empty means 'don't do kubectl stuff'
+      use_kubectl:
+        description: "Run kubectl commands after deploy?"
+        required: true
+        type: choice
+        options: [ "true", "false" ]
+        default: "false"
+
+  # workflow_dispatch:
+  #   inputs:
+  #     env_name:
+  #       description: "Environment name (dev, attack-1, etc.)"
+  #       required: true
+  #       type: string
+  #       default: v16
+  #     project:
+  #       description: "Terraform project name (must match iac2 var.project)"
+  #       required: true
+  #       type: string
+  #       default: ds5
+  #     app_tfvars_file:
+  #       description: "tfvars for iac2/40-app (ECR); usually dev.tfvars"
+  #       required: true
+  #       type: string
+  #       default: dev.tfvars
+  #     k8s_tfvars_file:
+  #       description: "tfvars for iac2/50-app-k8s; usually dev.tfvars"
+  #       required: true
+  #       type: string
+  #       default: dev.tfvars
+  #     run_terraform_ecr:
+  #       description: "Run Terraform for iac2/40-app (ECR)?"
+  #       required: true
+  #       type: choice
+  #       options: [ "true", "false" ]
+  #       default: "true"
+  #     run_terraform_k8s:
+  #       description: "Run Terraform for iac2/50-app-k8s (K8s deploy)?"
+  #       required: true
+  #       type: choice
+  #       options: [ "true", "false" ]
+  #       default: "true"
 
 jobs:
   build-and-deploy:
@@ -57,10 +113,8 @@ jobs:
         id: meta
         run: |
           PROJECT="${{ github.event.inputs.project || 'ds5' }}"
-          ENV_NAME="${{ github.event.inputs.env_name || 'dev' }}"
+          ENV_NAME="${{ github.event.inputs.env_name || 'v16' }}"
 
-          # ECR repo must match iac2/40-app locals:
-          # ecr_repo_name = "${var.project}-${var.environment_name}-tasky"
           ECR_REPO_NAME="${PROJECT}-${ENV_NAME}-tasky"
 
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -68,11 +122,11 @@ jobs:
           ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME}"
           IMAGE_TAG="${GITHUB_SHA::12}"
 
-          echo "PROJECT=${PROJECT}"           >> $GITHUB_OUTPUT
-          echo "ENV_NAME=${ENV_NAME}"         >> $GITHUB_OUTPUT
+          echo "PROJECT=${PROJECT}"             >> $GITHUB_OUTPUT
+          echo "ENV_NAME=${ENV_NAME}"           >> $GITHUB_OUTPUT
           echo "ECR_REPO_NAME=${ECR_REPO_NAME}" >> $GITHUB_OUTPUT
-          echo "ECR_URI=${ECR_URI}"           >> $GITHUB_OUTPUT
-          echo "IMAGE_TAG=${IMAGE_TAG}"       >> $GITHUB_OUTPUT
+          echo "ECR_URI=${ECR_URI}"             >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=${IMAGE_TAG}"         >> $GITHUB_OUTPUT
 
       - name: Login to ECR
         run: |
@@ -91,20 +145,23 @@ jobs:
         run: |
           docker push "${{ steps.meta.outputs.ECR_URI }}:${{ steps.meta.outputs.IMAGE_TAG }}"
 
-      # OPTIONAL: ensure ECR repo exists / is in desired state via Terraform 40-app
-      - name: Setup Terraform (for 40-app)
-        if: ${{ github.event.inputs.run_terraform == 'true' }}
+      #############################################
+      # Optional: Terraform 40-app (ECR infra)
+      #############################################
+
+      - name: Setup Terraform
+        if: ${{ github.event.inputs.run_terraform_ecr == 'true' || github.event.inputs.run_terraform_k8s == 'true' }}
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
 
       - name: Terraform init (40-app)
-        if: ${{ github.event.inputs.run_terraform == 'true' }}
+        if: ${{ github.event.inputs.run_terraform_ecr == 'true' }}
         working-directory: iac2/40-app
         run: terraform init -lock-timeout=5m
 
       - name: Terraform workspace select/create (40-app)
-        if: ${{ github.event.inputs.run_terraform == 'true' }}
+        if: ${{ github.event.inputs.run_terraform_ecr == 'true' }}
         working-directory: iac2/40-app
         run: |
           ENV_NAME="${{ steps.meta.outputs.ENV_NAME }}"
@@ -112,9 +169,36 @@ jobs:
           terraform workspace select "${ENV_NAME}" || terraform workspace new "${ENV_NAME}"
 
       - name: Terraform apply (40-app)
-        if: ${{ github.event.inputs.run_terraform == 'true' }}
+        if: ${{ github.event.inputs.run_terraform_ecr == 'true' }}
         working-directory: iac2/40-app
         run: |
           terraform apply -auto-approve \
-            -var-file="env/${{ github.event.inputs.tfvars_file }}" \
+            -var-file="env/${{ github.event.inputs.app_tfvars_file }}" \
             -var="environment_name=${{ steps.meta.outputs.ENV_NAME }}"
+
+      #############################################
+      # Optional: Terraform 50-app-k8s (deploy)
+      #############################################
+
+      - name: Terraform init (50-app-k8s)
+        if: ${{ github.event.inputs.run_terraform_k8s == 'true' }}
+        working-directory: iac2/50-app-k8s
+        run: terraform init -lock-timeout=5m
+
+      - name: Terraform workspace select/create (50-app-k8s)
+        if: ${{ github.event.inputs.run_terraform_k8s == 'true' }}
+        working-directory: iac2/50-app-k8s
+        run: |
+          ENV_NAME="${{ steps.meta.outputs.ENV_NAME }}"
+          terraform workspace list || true
+          terraform workspace select "${ENV_NAME}" || terraform workspace new "${ENV_NAME}"
+
+      - name: Terraform apply (50-app-k8s)
+        if: ${{ github.event.inputs.run_terraform_k8s == 'true' }}
+        working-directory: iac2/50-app-k8s
+        run: |
+          terraform apply -auto-approve \
+            -var-file="env/${{ github.event.inputs.k8s_tfvars_file }}" \
+            -var="environment_name=${{ steps.meta.outputs.ENV_NAME }}" \
+            -var="image_repo=${{ steps.meta.outputs.ECR_URI }}" \
+            -var="image_tag=${{ steps.meta.outputs.IMAGE_TAG }}"

@@ -1,0 +1,71 @@
+name: Build and Push Tasky to ECR
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  AWS_REGION: us-west-2
+  # Must match the ECR repo name from Terraform (locals.ecr_repo_name)
+  ECR_REPOSITORY: ds5-v16-tasky
+  CLUSTER_NAME: ds5-v16-us-west-2-eks  
+
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write    # for OIDC -> IAM
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.EXEC_ROLE_DEV_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd app
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag  $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Verify wizexercise.txt inside container
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker run --rm --entrypoint /bin/sh \
+            $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -c 'grep "David Segura" /app/wizexercise.txt'
+
+# ----- Stage 60: deploy to EKS -----
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name $CLUSTER_NAME \
+            --region $AWS_REGION
+
+      - name: Rollout restart Tasky deployment
+        run: |
+          kubectl rollout restart deployment/tasky -n tasky
+
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/tasky -n tasky --timeout=120s
