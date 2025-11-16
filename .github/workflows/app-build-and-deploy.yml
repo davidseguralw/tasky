@@ -1,0 +1,120 @@
+name: Build and Deploy Tasky App on iac2
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "app/**"
+      - ".github/workflows/app-build-and-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      env_name:
+        description: "Environment name (dev, attack-1, etc.)"
+        required: true
+        type: string
+        default: dev
+      project:
+        description: "Terraform project name (must match iac2 var.project)"
+        required: true
+        type: string
+        default: ds5
+      tfvars_file:
+        description: "tfvars file for iac2/40-app (usually dev.tfvars)"
+        required: true
+        type: string
+        default: dev.tfvars
+      run_terraform:
+        description: "Run Terraform for iac2/40-app after pushing image?"
+        required: true
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      AWS_REGION: us-west-2
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.EXEC_ROLE_DEV_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Derive ECR repo and image tag
+        id: meta
+        run: |
+          PROJECT="${{ github.event.inputs.project || 'ds5' }}"
+          ENV_NAME="${{ github.event.inputs.env_name || 'dev' }}"
+
+          # ECR repo must match iac2/40-app locals:
+          # ecr_repo_name = "${var.project}-${var.environment_name}-tasky"
+          ECR_REPO_NAME="${PROJECT}-${ENV_NAME}-tasky"
+
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME}"
+          IMAGE_TAG="${GITHUB_SHA::12}"
+
+          echo "PROJECT=${PROJECT}"           >> $GITHUB_OUTPUT
+          echo "ENV_NAME=${ENV_NAME}"         >> $GITHUB_OUTPUT
+          echo "ECR_REPO_NAME=${ECR_REPO_NAME}" >> $GITHUB_OUTPUT
+          echo "ECR_URI=${ECR_URI}"           >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=${IMAGE_TAG}"       >> $GITHUB_OUTPUT
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region "${AWS_REGION}" \
+            | docker login \
+                --username AWS \
+                --password-stdin "${{ steps.meta.outputs.ECR_URI%%/* }}"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t "${{ steps.meta.outputs.ECR_URI }}:${{ steps.meta.outputs.IMAGE_TAG }}" \
+            ./app
+
+      - name: Push Docker image
+        run: |
+          docker push "${{ steps.meta.outputs.ECR_URI }}:${{ steps.meta.outputs.IMAGE_TAG }}"
+
+      # OPTIONAL: ensure ECR repo exists / is in desired state via Terraform 40-app
+      - name: Setup Terraform (for 40-app)
+        if: ${{ github.event.inputs.run_terraform == 'true' }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Terraform init (40-app)
+        if: ${{ github.event.inputs.run_terraform == 'true' }}
+        working-directory: iac2/40-app
+        run: terraform init -lock-timeout=5m
+
+      - name: Terraform workspace select/create (40-app)
+        if: ${{ github.event.inputs.run_terraform == 'true' }}
+        working-directory: iac2/40-app
+        run: |
+          ENV_NAME="${{ steps.meta.outputs.ENV_NAME }}"
+          terraform workspace list || true
+          terraform workspace select "${ENV_NAME}" || terraform workspace new "${ENV_NAME}"
+
+      - name: Terraform apply (40-app)
+        if: ${{ github.event.inputs.run_terraform == 'true' }}
+        working-directory: iac2/40-app
+        run: |
+          terraform apply -auto-approve \
+            -var-file="env/${{ github.event.inputs.tfvars_file }}" \
+            -var="environment_name=${{ steps.meta.outputs.ENV_NAME }}"
